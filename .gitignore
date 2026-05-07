@@ -1,0 +1,55 @@
+# Build output
+build/
+out/
+dist/
+
+# C/C++ object & lib files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+CMakeScripts/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+.cmake/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.clangd/
+.ccls-cache/
+
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+Icon?
+
+# Python (build/dev tooling may show up here)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local overrides
+*.local
+.env
