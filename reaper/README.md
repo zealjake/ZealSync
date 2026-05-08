@@ -8,13 +8,13 @@ REAPER C++ extension half of ZealSync.
 cmake -B build && cmake --build build
 ```
 
-Produces `build/reaper_zealsync.dylib`. Copy it to:
+Produces `build/reaper_zealsync.dylib` and auto-installs it to
+`~/Library/Application Support/REAPER/UserPlugins/` after linking.
+Restart REAPER (or use Actions → Reload all plug-ins). The extension
+binds TCP port 29882 on load.
 
-```
-~/Library/Application Support/REAPER/UserPlugins/
-```
-
-Then restart REAPER. The extension binds TCP port 29882 on load.
+Disable the auto-install with `-DZEALSYNC_AUTO_INSTALL=OFF`, or
+override the destination with `-DZEALSYNC_USERPLUGINS_DIR=/some/path`.
 
 ### Standalone test build
 

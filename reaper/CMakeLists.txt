@@ -24,6 +24,22 @@ else()
         PREFIX ""
         SUFFIX ".dylib"
     )
+
+    # Auto-install to REAPER's UserPlugins directory after every build.
+    # Disable with -DZEALSYNC_AUTO_INSTALL=OFF.
+    option(ZEALSYNC_AUTO_INSTALL "Copy the built dylib into REAPER's UserPlugins dir after linking" ON)
+    if(ZEALSYNC_AUTO_INSTALL AND APPLE)
+        set(ZEALSYNC_USERPLUGINS_DIR
+            "$ENV{HOME}/Library/Application Support/REAPER/UserPlugins"
+            CACHE PATH "REAPER UserPlugins directory")
+        add_custom_command(TARGET reaper_zealsync POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${ZEALSYNC_USERPLUGINS_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:reaper_zealsync>"
+                    "${ZEALSYNC_USERPLUGINS_DIR}/reaper_zealsync.dylib"
+            COMMENT "Installing reaper_zealsync.dylib -> ${ZEALSYNC_USERPLUGINS_DIR}"
+            VERBATIM)
+    endif()
 endif()
 
 target_include_directories(reaper_zealsync PRIVATE
