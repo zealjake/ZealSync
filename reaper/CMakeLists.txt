@@ -12,6 +12,7 @@ set(SOURCES
     src/net/framing.cpp
     src/net/dispatcher.cpp
     src/net/listener.cpp
+    src/net/main_thread_queue.cpp
     src/sync/info_handler.cpp
 )
 
@@ -55,3 +56,16 @@ target_compile_options(reaper_zealsync PRIVATE -Wall -Wextra -Wpedantic)
 
 find_package(Threads REQUIRED)
 target_link_libraries(reaper_zealsync PRIVATE Threads::Threads)
+
+# Tests — small standalone executables, one per logical unit. Built by default;
+# disable with -DZEALSYNC_BUILD_TESTS=OFF.
+option(ZEALSYNC_BUILD_TESTS "Build standalone unit-test executables" ON)
+if(ZEALSYNC_BUILD_TESTS)
+    add_executable(queue_test
+        tests/queue_test.cpp
+        src/net/main_thread_queue.cpp
+    )
+    target_include_directories(queue_test PRIVATE src)
+    target_compile_options(queue_test PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_libraries(queue_test PRIVATE Threads::Threads)
+endif()
