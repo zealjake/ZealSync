@@ -1,26 +1,11 @@
 #include "dispatcher.h"
 
+#include "protocol.h"
 #include "../version.h"
 
 namespace zealsync::net {
 
 namespace {
-
-bool protocol_versions_compatible(const std::string &client) {
-    auto first_dot = client.find('.');
-    if (first_dot == std::string::npos) return false;
-    auto second_dot = client.find('.', first_dot + 1);
-    std::string client_major_minor = client.substr(
-        0, second_dot == std::string::npos ? client.size() : second_dot);
-
-    std::string ours = kProtocolVersion;
-    auto our_dot = ours.find('.');
-    auto our_dot2 = ours.find('.', our_dot + 1);
-    std::string our_major_minor = ours.substr(
-        0, our_dot2 == std::string::npos ? ours.size() : our_dot2);
-
-    return client_major_minor == our_major_minor;
-}
 
 DispatchResult completed(nlohmann::json body) {
     return DispatchCompleted{std::move(body)};
@@ -49,7 +34,7 @@ DispatchResult Dispatcher::dispatch(const nlohmann::json &request, int fd) const
     }
 
     const auto client_version = request["protocolVersion"].get<std::string>();
-    if (!protocol_versions_compatible(client_version)) {
+    if (!is_compatible_protocol_version(client_version)) {
         return completed(make_error(
             "protocolVersionMismatch",
             "Client protocol version " + client_version +

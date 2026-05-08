@@ -5,6 +5,7 @@
 #include "net/dispatcher.h"
 #include "net/listener.h"
 #include "net/main_thread_queue.h"
+#include "net/udp_discovery.h"
 #include "sync/info.h"
 
 #ifndef ZEALSYNC_STANDALONE
@@ -46,6 +47,7 @@ std::uint16_t resolve_port() {
 
 zealsync::net::Dispatcher g_dispatcher;
 std::unique_ptr<zealsync::net::Listener> g_listener;
+std::unique_ptr<zealsync::net::UdpDiscoveryServer> g_udp_discovery;
 
 // REAPER's "timer" registration takes a void(*)(). Drains the main-thread
 // queue every tick. Exceptions inside closures are caught by the closure
@@ -67,9 +69,12 @@ void register_handlers() {
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     REAPER_PLUGIN_HINSTANCE /*hInstance*/, reaper_plugin_info_t *rec) {
     if (!rec) {
-        // Unload. Stop accepting connections, drain anything still queued
-        // (won't have an fd to write to if listener is gone, but the closure
-        // will close cleanly), unregister timer.
+        // Unload. Stop accepting connections (UDP first so it can't reference
+        // a torn-down listener), unregister timer.
+        if (g_udp_discovery) {
+            g_udp_discovery->stop();
+            g_udp_discovery.reset();
+        }
         if (g_listener) {
             g_listener->stop();
             g_listener.reset();
@@ -109,6 +114,24 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
         char msg[128];
         std::snprintf(msg, sizeof(msg),
                       "ZealSync: TCP listener bound on port %u.\n", port);
+        log(msg);
+    }
+
+    // UDP discovery reads the listener's *bound* port on every probe, so
+    // any future port-fallback path is reflected automatically.
+    g_udp_discovery = std::make_unique<zealsync::net::UdpDiscoveryServer>(
+        [] { return g_listener ? g_listener->bound_port() : 0; });
+    if (!g_udp_discovery->start()) {
+        log("ZealSync: failed to start UDP discovery server.\n");
+        // Keep the TCP listener running — discovery is a convenience, not
+        // a hard requirement. The MA3 plugin can still use a persisted
+        // endpoint.
+        g_udp_discovery.reset();
+    } else {
+        char msg[128];
+        std::snprintf(msg, sizeof(msg),
+                      "ZealSync: UDP discovery bound on port %u.\n",
+                      zealsync::net::kUdpDiscoveryPort);
         log(msg);
     }
     return 1;

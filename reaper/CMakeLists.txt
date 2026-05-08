@@ -14,6 +14,8 @@ set(NET_SOURCES
     src/net/dispatcher.cpp
     src/net/listener.cpp
     src/net/main_thread_queue.cpp
+    src/net/protocol.cpp
+    src/net/udp_discovery.cpp
     src/net/uuid.cpp
 )
 
@@ -85,4 +87,13 @@ if(ZEALSYNC_BUILD_TESTS)
     )
     target_include_directories(uuid_test PRIVATE src)
     target_compile_options(uuid_test PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_executable(udp_discovery_test
+        tests/udp_discovery_test.cpp
+        src/net/udp_discovery.cpp
+        src/net/protocol.cpp
+    )
+    target_include_directories(udp_discovery_test PRIVATE src third_party)
+    target_compile_options(udp_discovery_test PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_libraries(udp_discovery_test PRIVATE Threads::Threads)
 endif()

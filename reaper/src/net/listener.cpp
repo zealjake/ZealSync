@@ -49,6 +49,7 @@ bool Listener::start(std::uint16_t port) {
         return false;
     }
 
+    bound_port_.store(port);
     stop_.store(false);
     thread_ = std::thread([this]() { run(); });
     return true;
@@ -63,6 +64,7 @@ void Listener::stop() {
         listen_fd_ = -1;
     }
     thread_.join();
+    bound_port_.store(0);
 }
 
 void Listener::run() {
