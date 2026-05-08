@@ -1869,7 +1869,9 @@ the project.
     "color": 16711680
   },
   "preferences": {
-    "deleteWarningSuppressed": false
+    "deleteWarningSuppressed": false,
+    "token": "Go",
+    "tokenTarget": null
   }
 }
 ```
@@ -1898,7 +1900,9 @@ REAPER track.
     "noteNumber": 36
   },
   "preferences": {
-    "deleteWarningSuppressed": false
+    "deleteWarningSuppressed": false,
+    "token": "Go",
+    "tokenTarget": null
   }
 }
 ```
@@ -1944,12 +1948,78 @@ state is desk-local and resets on import.
 
 v1 preference fields are minimal:
 
-| Record type        | Preferences field          | Type    | Default | Notes                                                              |
-|--------------------|----------------------------|---------|---------|--------------------------------------------------------------------|
-| `markerSequence`   | `deleteWarningSuppressed`  | boolean | `false` | Operator clicked "Don't show again" on the orphan-cue dialog for this Sequence. |
-| `midiSequence`     | `deleteWarningSuppressed`  | boolean | `false` | Same.                                                              |
-| `timecode`         | (none in v1)               | —       | —       | `preferences` object is empty. Reserved for future use.            |
-| `tempoSequence`    | (none in v1)               | —       | —       | Same.                                                              |
+| Record type        | Preferences field          | Type            | Default | Notes                                                              |
+|--------------------|----------------------------|-----------------|---------|--------------------------------------------------------------------|
+| `markerSequence`   | `deleteWarningSuppressed`  | boolean         | `false` | Operator clicked "Don't show again" on the orphan-cue dialog for this Sequence. |
+| `markerSequence`   | `token`                    | string          | `"Go"`  | One of `"Go"`, `"Goto"`. Determines the CmdEvent text written to the marker's Track in the Timecode object. See §8.4.1. |
+| `markerSequence`   | `tokenTarget`              | string \| null  | `null`  | Only meaningful when `token == "Goto"`. The target cue, as the operator typed it (e.g. `"5"`, `"3.1"`, `"Verse"`). Written verbatim into the CmdEvent. Null otherwise. |
+| `midiSequence`     | `deleteWarningSuppressed`  | boolean         | `false` | Same as markerSequence.                                            |
+| `midiSequence`     | `token`                    | string          | `"Go"`  | One of `"Go"`, `"Top"`, `"Goto"`, `"Off"`, `"Flash"`, `"Temp"`, `"Go/Release"`. See §8.4.1. |
+| `midiSequence`     | `tokenTarget`              | string \| null  | `null`  | Same as markerSequence.                                            |
+| `timecode`         | (none in v1)               | —               | —       | `preferences` object is empty. Reserved for future use.            |
+| `tempoSequence`    | (none in v1)               | —               | —       | Same.                                                              |
+
+#### §8.4.1 Token semantics and CmdEvent mapping
+
+The `token` field controls the CmdEvent text the MA3 client writes
+to the Timecode Track when populating the project's Timecode object
+(M4 for markers, M5 for MIDI). The CmdEvent fires on playback at
+each marker's `startTime` or each MIDI note's `startTime`.
+
+**Marker tokens** (2 values):
+
+| Token   | CmdEvent text                                | Notes                                              |
+|---------|----------------------------------------------|----------------------------------------------------|
+| `Go`    | `Go Sequence N`                              | Default. Fires the next cue in Sequence N.         |
+| `Goto`  | `Goto Cue <tokenTarget> Sequence N`          | Jumps to a specific cue. `tokenTarget` is the cue identifier. |
+
+**MIDI tokens** (7 values):
+
+| Token         | CmdEvent text                                    | Notes                                                                                          |
+|---------------|--------------------------------------------------|------------------------------------------------------------------------------------------------|
+| `Go`          | `Go Sequence N`                                  | Default. Fires next cue.                                                                       |
+| `Top`         | `Goto Cue 1 Sequence N`                          | Resets to cue 1. Useful for repeating drum loops.                                              |
+| `Goto`        | `Goto Cue <tokenTarget> Sequence N`              | Jumps to a specific cue. `tokenTarget` required.                                               |
+| `Off`         | `Off Sequence N`                                 | Kills the Sequence's running cue.                                                              |
+| `Flash`       | `Flash Sequence N`                               | Bumps for the duration of the note.                                                            |
+| `Temp`        | `Temp Sequence N`                                | Pressure-sensitive — note-on triggers, note-off releases.                                      |
+| `Go/Release`  | `Go Sequence N` on note-on, `Off Sequence N` on note-off | Two CmdEvents per hit. The MA3 client writes one event at the note's `startTime` and a second at `endTime`. |
+
+`N` in the CmdEvent text is the Sequence's MA3 pool number. The MA3
+client substitutes it at write time.
+
+`Go/Release` is the only token that produces two CmdEvents per hit.
+All others produce exactly one CmdEvent per occurrence (one per
+marker, one per MIDI note-on). The MIDI events array (§7.3.3)
+already carries `endTime` per event, so no protocol change is needed
+to support `Go/Release` — the MA3 client uses both timestamps when
+the token is selected.
+
+`tokenTarget` is opaque to the wire protocol. The MA3 client writes
+it verbatim into the CmdEvent text. If the operator types something
+MA3 doesn't understand, the CmdEvent will fail at playback time on
+the desk — discoverable on first run, not a silent failure. The
+client may sanity-check the format before writing (e.g. warn on
+empty string when `token == "Goto"`), but the protocol does not
+prescribe validation.
+
+**Token persistence on re-sync.** The `token` and `tokenTarget`
+values are operator-set in the sync preview dialog. They live on
+the Sequence's ZealData record, which means:
+
+- Re-syncing the same project preserves the operator's token
+  choices.
+- Importing a show file to another desk carries the token choices
+  with it.
+- Manually deleting a Sequence's ZealData blob (§8.9) loses the
+  token choice; the Sequence is treated as fresh on next sync,
+  defaulting back to `Go`.
+
+Adding new tokens to the supported set is a non-breaking change.
+A reader encountering an unknown `token` value (e.g. an older client
+seeing a token added in a newer version) treats it as malformed,
+falls back to the default `Go`, and logs a warning. Removing a
+token from the supported set is a schema bump.
 
 Adding new preference fields to a record type is a non-breaking
 change. Old clients that don't recognise a field round-trip it
@@ -2134,6 +2204,7 @@ as the copy-paste collision case.
 | Schema version implicit; structural changes are breaking. | Schema version explicit per record via `schemaVersion`. Forward-compat path defined in §8.5.   |
 | Records intermixed in flat JSON; no `identity`/`preferences` separation. | Structured envelope with `identity` (recovery key) and `preferences` (operator state) sections. |
 | MArkers and ZealSync blobs co-exist on the same Note property without parser collision. | Same — different envelopes, ignored on each side.                                              |
+| 18-token vocabulary with regex-parsed track-name suffixes (e.g. `gtr5` for Goto/Release cue 5, `tp` for Top). | 7-token MIDI vocabulary, 2-token marker vocabulary. Token chosen per-Sequence in the sync preview dialog (M4 for markers, M5 for MIDI). No track-name parsing. See §8.4.1. |
 
 The Caesar shift in MArkers was unhelpful obfuscation — it
 prevented operator inspection without providing security. ZealData

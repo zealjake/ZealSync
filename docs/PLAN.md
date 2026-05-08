@@ -70,6 +70,7 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 - Tracks: one Track per unique marker colour under `Markers`; a single `Tempo` Track under `Tempo`.
 - Sequence creation: one per-colour marker Sequence; the single Tempo Sequence. ZealData stamps per §8.3.2 (`markerSequence`) and §8.3.4 (`tempoSequence`).
 - CmdEvent population: one event per Cue per Sequence, routed to the appropriate Track based on colour identity.
+- Per-Sequence trigger token system: dropdown in the sync preview dialog with two options for marker Sequences (`Go`, `Goto`), default `Go`. When `Goto` is selected, a companion text field for `tokenTarget`. Tokens persist on the Sequence's ZealData record (§8.4.1). CmdEvent text generated per the token mapping in §8.4.1.
 - Diff logic: read existing Sequences' ZealData blobs (§8.7 read contract) and `savedMeta` (§7.5) and classify each incoming marker as new / matches-saved / matches-existing-but-changed.
 - Colour-name lookup table at `ma3/shared/colour_names.lua`: hardcoded palette for the eight common colours (Red, Green, Blue, Yellow, Cyan, Magenta, White, Black), `#RRGGBB` hex fallback for others. Used to label Tracks under `Markers`.
 - `tempo` verb wired up server-side, sufficient to populate the Tempo Sequence's CmdEvents.
@@ -96,6 +97,7 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 - `midi` handler: enumerates named MIDI notes per track, returns `[{ trackGuid, note, name, ... }]`. Only notes with a name in Reaper's named-note table.
 - Dialog gains a MIDI section (or tab — decide during implementation). Apply path creates one Sequence per `(trackGuid, note)` pair.
 - MTdata identity covers both markers and MIDI.
+- Per-Sequence trigger token dropdown extended to MIDI Sequences with seven options (`Go`, `Top`, `Goto`, `Off`, `Flash`, `Temp`, `Go/Release`), default `Go`. Same `tokenTarget` companion field for `Goto`. `Go/Release` writes two CmdEvents per hit (note-on and note-off). Other tokens write one CmdEvent per note-on.
 
 **Exit.** Dialog shows markers and MIDI, both diffable, both apply-able. Re-opening shows correct saved-state for both.
 
