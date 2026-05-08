@@ -53,3 +53,6 @@ venv/
 # Local overrides
 *.local
 .env
+
+# Local-only test scripts (per M1 plan)
+reaper/scripts/
