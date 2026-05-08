@@ -19,6 +19,8 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 
 ## M1 — End-to-end skeleton
 
+**Status:** Shipped 2026-05-08. Merge commit 73c0ebc.
+
 **Scope.** Prove the wire works.
 
 - Reaper side: TCP listener, framing (`MC`/`MS` + length-prefix + JSON), dispatcher stub, single `info` verb that returns hardcoded JSON. No real REAPER API calls.
