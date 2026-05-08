@@ -7,20 +7,30 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ZEALSYNC_STANDALONE "Build a standalone test executable (no REAPER required)" OFF)
 
-set(SOURCES
-    src/main.cpp
+# Net-layer sources are REAPER-free: framing, dispatcher, listener, queue,
+# uuid. These can be linked into either the dylib or the standalone exe.
+set(NET_SOURCES
     src/net/framing.cpp
     src/net/dispatcher.cpp
     src/net/listener.cpp
     src/net/main_thread_queue.cpp
-    src/sync/info_handler.cpp
+    src/net/uuid.cpp
+)
+
+# REAPER-bound sources call into the REAPER C API and only link inside the
+# dylib (where REAPERAPI_LoadAPI populates the function pointers at load
+# time). Standalone leaves these out — there are no REAPER symbols to bind.
+set(REAPER_SOURCES
+    src/reaper_api/project.cpp
+    src/sync/info.cpp
 )
 
 if(ZEALSYNC_STANDALONE)
-    add_executable(reaper_zealsync ${SOURCES})
+    add_executable(reaper_zealsync src/main.cpp ${NET_SOURCES})
     target_compile_definitions(reaper_zealsync PRIVATE ZEALSYNC_STANDALONE=1)
 else()
-    add_library(reaper_zealsync MODULE ${SOURCES})
+    add_library(reaper_zealsync MODULE
+        src/main.cpp ${NET_SOURCES} ${REAPER_SOURCES})
     set_target_properties(reaper_zealsync PROPERTIES
         PREFIX ""
         SUFFIX ".dylib"
@@ -68,4 +78,11 @@ if(ZEALSYNC_BUILD_TESTS)
     target_include_directories(queue_test PRIVATE src)
     target_compile_options(queue_test PRIVATE -Wall -Wextra -Wpedantic)
     target_link_libraries(queue_test PRIVATE Threads::Threads)
+
+    add_executable(uuid_test
+        tests/uuid_test.cpp
+        src/net/uuid.cpp
+    )
+    target_include_directories(uuid_test PRIVATE src)
+    target_compile_options(uuid_test PRIVATE -Wall -Wextra -Wpedantic)
 endif()

@@ -1,17 +1,30 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
-#include <string>
 
 #include "net/dispatcher.h"
 #include "net/listener.h"
-#include "sync/info_handler.h"
+#include "net/main_thread_queue.h"
+#include "sync/info.h"
 
 #ifndef ZEALSYNC_STANDALONE
 
 #define REAPERAPI_IMPLEMENT
 #define REAPERAPI_MINIMAL
+// Sorted alphabetically. Each line is a function the extension calls
+// somewhere — main.cpp, reaper_api/, or a handler. Adding a function call
+// without adding a WANT_ line links fine but crashes at runtime when REAPER
+// fails to populate the function pointer.
+#define REAPERAPI_WANT_EnumProjects
+#define REAPERAPI_WANT_GetProjExtState
+#define REAPERAPI_WANT_GetProjectLength
+#define REAPERAPI_WANT_GetProjectName
+#define REAPERAPI_WANT_GetProjectTimeOffset
+#define REAPERAPI_WANT_MarkProjectDirty
+#define REAPERAPI_WANT_SetProjExtState
 #define REAPERAPI_WANT_ShowConsoleMsg
+#define REAPERAPI_WANT_TimeMap_curFrameRate
+#define REAPERAPI_WANT_plugin_register
 
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
@@ -34,6 +47,17 @@ std::uint16_t resolve_port() {
 zealsync::net::Dispatcher g_dispatcher;
 std::unique_ptr<zealsync::net::Listener> g_listener;
 
+// REAPER's "timer" registration takes a void(*)(). Drains the main-thread
+// queue every tick. Exceptions inside closures are caught by the closure
+// itself; this wrapper guards against any escape into REAPER's timer pump.
+void main_thread_drain_tick() {
+    try {
+        zealsync::net::main_thread_queue().drain();
+    } catch (...) {
+        std::fprintf(stderr, "ZealSync: drain-tick caught unknown exception.\n");
+    }
+}
+
 void register_handlers() {
     zealsync::sync::register_info_handler(g_dispatcher);
 }
@@ -43,9 +67,15 @@ void register_handlers() {
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     REAPER_PLUGIN_HINSTANCE /*hInstance*/, reaper_plugin_info_t *rec) {
     if (!rec) {
+        // Unload. Stop accepting connections, drain anything still queued
+        // (won't have an fd to write to if listener is gone, but the closure
+        // will close cleanly), unregister timer.
         if (g_listener) {
             g_listener->stop();
             g_listener.reset();
+        }
+        if (plugin_register) {
+            plugin_register("-timer", reinterpret_cast<void *>(&main_thread_drain_tick));
         }
         return 0;
     }
@@ -59,6 +89,12 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
     log("ZealSync: loading...\n");
 
     register_handlers();
+
+    // Drain the main-thread queue on REAPER's timer tick. Per WIRE_PROTOCOL
+    // §5 (wait continuation), handlers defer REAPER work onto this queue
+    // because the REAPER API is main-thread-only.
+    plugin_register("timer", reinterpret_cast<void *>(&main_thread_drain_tick));
+
     const std::uint16_t port = resolve_port();
     g_listener = std::make_unique<zealsync::net::Listener>(g_dispatcher);
     if (!g_listener->start(port)) {
@@ -66,6 +102,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(
         std::snprintf(msg, sizeof(msg),
                       "ZealSync: failed to start TCP listener on %u.\n", port);
         log(msg);
+        plugin_register("-timer", reinterpret_cast<void *>(&main_thread_drain_tick));
         return 0;
     }
     {
@@ -89,7 +126,8 @@ namespace {
 zealsync::net::Dispatcher g_dispatcher;
 
 void register_handlers() {
-    zealsync::sync::register_info_handler(g_dispatcher);
+    // Standalone build does not register the info handler — info needs the
+    // REAPER API. Net-layer handlers (none yet) would register here.
 }
 
 std::atomic<bool> g_should_exit{false};
@@ -116,7 +154,11 @@ int main(int argc, char **argv) {
     }
     std::fprintf(stderr, "ZealSync standalone: listening on %u. Ctrl-C to stop.\n", port);
     while (!g_should_exit.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        // Drain the queue periodically so anything enqueued by deferred
+        // handlers actually runs. Real REAPER hosts this through the
+        // plugin_register("timer", ...) callback.
+        zealsync::net::main_thread_queue().drain();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     listener.stop();
     return 0;
