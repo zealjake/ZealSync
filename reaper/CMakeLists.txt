@@ -44,8 +44,11 @@ endif()
 
 target_include_directories(reaper_zealsync PRIVATE
     third_party
+)
+# SYSTEM include for vendored SDK headers — silences -Wunused-parameter and friends
+# in upstream code we don't own.
+target_include_directories(reaper_zealsync SYSTEM PRIVATE
     third_party/reaper-sdk/sdk
-    include
 )
 
 target_compile_options(reaper_zealsync PRIVATE -Wall -Wextra -Wpedantic)

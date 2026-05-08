@@ -9,7 +9,10 @@
 
 namespace zealsync::net {
 
-constexpr std::uint16_t kTcpPort = 29882;
+// Dev-default TCP port for M2–M6, picked to coexist with ZealServer on 29882.
+// Overridden at runtime via the ZEALSYNC_TCP_PORT env var. M7 flips this back
+// to 29882 when ZealServer retires.
+constexpr std::uint16_t kTcpPort = 29892;
 
 class Listener {
 public:
