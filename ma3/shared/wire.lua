@@ -45,6 +45,13 @@ local SERVER_MAGIC = "MS"
 local DEFAULT_TIMEOUT = 2.0
 local CONNECT_TIMEOUT = 2.0 -- §3.3 default; matches recv timeout for symmetry
 
+-- Client-side safety belt for the wait continuation (D7). Not a protocol
+-- concept — the server doesn't know we gave up. At the default 2s timeout
+-- this is two minutes of legitimate slow handlers, well past anything
+-- M2-M6 should produce. A buggy server emitting `wait` forever would
+-- otherwise hang the plugin indefinitely.
+local WAIT_CAP = 60
+
 local function log(fmt, ...)
     if Printf then Printf("ZealSync: " .. fmt, ...) end
 end
@@ -65,6 +72,30 @@ local function recv_exact(sock, n)
         got = got + #chunk
     end
     return table.concat(buf)
+end
+
+-- Read one server frame: magic + length + body. Returns the decoded body
+-- table on success, or nil + error string. Caller is responsible for
+-- closing the socket on error.
+local function recv_one_frame(sock)
+    local magic, mag_err = recv_exact(sock, 2)
+    if not magic then return nil, "recv magic: " .. tostring(mag_err) end
+    if magic ~= SERVER_MAGIC then return nil, "bad magic: " .. magic end
+
+    local len_raw, len_err = recv_exact(sock, 4)
+    if not len_raw then return nil, "recv length: " .. tostring(len_err) end
+    local resp_len = string.unpack("<I4", len_raw)
+
+    local resp_body = ""
+    if resp_len > 0 then
+        local b, body_err = recv_exact(sock, resp_len)
+        if not b then return nil, "recv body: " .. tostring(body_err) end
+        resp_body = b
+    end
+
+    local decoded_ok, decoded = pcall(json.decode, resp_body)
+    if not decoded_ok then return nil, "json decode: " .. tostring(decoded) end
+    return decoded
 end
 
 -- Open a TCP socket and connect, settimeout for the connect call.
@@ -131,41 +162,57 @@ function M.connect()
 end
 
 -- Send a request, read the response, close. Endpoint resolved internally
--- via M.connect() — callers don't see host/port.
+-- via M.connect() — callers don't see host/port. Handles the wait
+-- continuation per WIRE_PROTOCOL §5.2: each wait resets the receive
+-- deadline by `timeout`, then we re-read on the same socket. Loop
+-- terminates on done, error, or the WAIT_CAP safety belt (D7).
 function M.send_request(request_table, timeout)
     timeout = timeout or DEFAULT_TIMEOUT
 
     local sock, connect_err = M.connect()
     if not sock then return nil, connect_err end
-    sock:settimeout(timeout)
 
     local body = json.encode(request_table)
     local len = #body
     local len_bytes = string.pack("<I4", len)
     local frame = CLIENT_MAGIC .. len_bytes .. body
 
+    sock:settimeout(timeout)
     local sent_ok, send_err = sock:send(frame)
     if not sent_ok then sock:close(); return nil, "send: " .. tostring(send_err) end
 
-    local magic, mag_err = recv_exact(sock, 2)
-    if not magic then sock:close(); return nil, "recv magic: " .. tostring(mag_err) end
-    if magic ~= SERVER_MAGIC then sock:close(); return nil, "bad magic: " .. magic end
+    local wait_count = 0
+    while true do
+        -- Reset the recv deadline at the top of every iteration. §5.2: each
+        -- wait extends the deadline by the same timeout value.
+        sock:settimeout(timeout)
+        local decoded, err = recv_one_frame(sock)
+        if not decoded then
+            sock:close()
+            return nil, err
+        end
 
-    local len_raw, len_err = recv_exact(sock, 4)
-    if not len_raw then sock:close(); return nil, "recv length: " .. tostring(len_err) end
-    local resp_len = string.unpack("<I4", len_raw)
-
-    local resp_body = ""
-    if resp_len > 0 then
-        local b, body_err = recv_exact(sock, resp_len)
-        if not b then sock:close(); return nil, "recv body: " .. tostring(body_err) end
-        resp_body = b
+        if decoded.status == "wait" then
+            wait_count = wait_count + 1
+            log("received wait (#%d) — server still working", wait_count)
+            if wait_count > WAIT_CAP then
+                log("server emitted >%d wait continuations; giving up", WAIT_CAP)
+                sock:close()
+                return {
+                    status = "error",
+                    code = "waitCapExceeded",
+                    message = "server emitted >" .. WAIT_CAP ..
+                        " wait continuations; client gave up",
+                }
+            end
+            -- Loop: deadline reset on next iteration's settimeout above.
+        else
+            -- Final response — done or error. Either way, the conversation
+            -- is over and the socket closes.
+            sock:close()
+            return decoded
+        end
     end
-    sock:close()
-
-    local decoded_ok, decoded = pcall(json.decode, resp_body)
-    if not decoded_ok then return nil, "json decode: " .. tostring(decoded) end
-    return decoded
 end
 
 return M
