@@ -14,6 +14,7 @@ alongside them.
 └── ZealSync_shared/
     ├── discover.lua            ← from ma3/shared/
     ├── json.lua                ← from ma3/shared/
+    ├── version.lua             ← from ma3/shared/
     └── wire.lua                ← from ma3/shared/
 ```
 

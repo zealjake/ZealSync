@@ -27,7 +27,11 @@ end
 
 local socket = require("socket")
 local json = load_shared("json")
-local wire = load_shared("wire")
+-- Don't load_shared("wire") here — wire loads discover for connect-with-
+-- fallback, so a wire dep here would form a circular load_shared during
+-- the first load of either module. PROTOCOL_VERSION lives in version.lua
+-- precisely to break that cycle.
+local version = load_shared("version")
 
 local M = {}
 
@@ -36,8 +40,12 @@ local LISTEN_SECONDS = 5.0
 local RECV_POLL_TIMEOUT = 0.2 -- per-recv timeout; loop until LISTEN_SECONDS elapses
 local RECV_BUFFER = 4096
 
+-- Generic ZealSync prefix — discover is a shared module that's called from
+-- multiple plugin entries (ZealSync_Discover for the manual flow, wire.lua
+-- for the connect-with-fallback path). A per-call prefix would mismatch the
+-- caller; a generic one reads consistently in System Monitor.
 local function log(fmt, ...)
-    if Printf then Printf("ZealSync_Discover: " .. fmt, ...) end
+    if Printf then Printf("ZealSync: " .. fmt, ...) end
 end
 
 local function valid_done_response(t)
@@ -66,7 +74,7 @@ function M.discover()
 
     local probe = json.encode({
         action = "discover",
-        protocolVersion = wire.PROTOCOL_VERSION,
+        protocolVersion = version.PROTOCOL_VERSION,
     })
 
     -- TODO(M2-followup): per-NIC enumeration is deferred (D4). 255.255.255.255

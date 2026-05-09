@@ -35,12 +35,9 @@ end
 
 local wire = load_shared("wire")
 
-local HOST = "127.0.0.1"
-local PORT = 29892
-
 local function main(...)
-    Printf("ZealSync_Info: sending info to %s:%d ...", HOST, PORT)
-    local resp, err = wire.send_request(HOST, PORT, {
+    Printf("ZealSync_Info: sending info ...")
+    local resp, err = wire.send_request({
         action = "info",
         protocolVersion = wire.PROTOCOL_VERSION,
         dataPool = HandleToInt(DataPool()),

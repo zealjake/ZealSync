@@ -1,13 +1,11 @@
--- ZealSync wire-protocol client. One request per connection.
--- Uses LuaSocket (a system module on the MA3 desk, proven by MArkersLIVE)
--- and our vendored rxi/json.lua loaded explicitly via the same load_shared
--- helper the plugin files use.
+-- ZealSync wire-protocol client. One request per connection (§2.5).
 --
--- This file is itself loaded via load_shared("wire") from a plugin. We need
--- our own copy of the helper so wire.lua's own dependencies resolve through
--- GetPath('plugins') rather than relying on package.path or arbitrary
--- working-directory behaviour. D9: every shared module that loads other
--- shared modules carries the helper itself.
+-- Resolves the Reaper extension's endpoint via UserVars; falls back to UDP
+-- discovery on miss or stale endpoint per D6 (silent re-discover; the
+-- operator-confirmation prompt comes in M4 with the picker dialog).
+--
+-- Uses LuaSocket (a system module on the MA3 desk) and our vendored
+-- rxi/json.lua loaded via load_shared.
 
 local function load_shared(name)
     local plugins_root
@@ -29,24 +27,27 @@ local function load_shared(name)
     return mod
 end
 
--- LuaSocket is a system module on the desk — lives on the MA3 Lua path,
--- not in our ZealSync_shared/ folder. require() is correct here.
+-- LuaSocket is a system module on the desk — lives on the MA3 Lua path, not
+-- in our ZealSync_shared/ folder. require() is correct here.
 local socket = require("socket")
--- rxi/json is vendored under ma3/shared/json.lua — must come through
--- load_shared so the canonical copy is used regardless of whatever
--- package.path looks like on a given desk.
 local json = load_shared("json")
+local version = load_shared("version")
+local discover = load_shared("discover")
 
 local M = {}
 
--- Wire-protocol version string, sent on every request and verified by the
--- server (WIRE_PROTOCOL §10.3). Exposed so other ZealSync modules — discover,
--- future per-verb wrappers — reuse the same literal instead of duplicating.
-M.PROTOCOL_VERSION = "1.0"
+-- Re-export so existing call sites that still read wire.PROTOCOL_VERSION
+-- keep working. New code should prefer load_shared("version").PROTOCOL_VERSION.
+M.PROTOCOL_VERSION = version.PROTOCOL_VERSION
 
 local CLIENT_MAGIC = "MC"
 local SERVER_MAGIC = "MS"
 local DEFAULT_TIMEOUT = 2.0
+local CONNECT_TIMEOUT = 2.0 -- §3.3 default; matches recv timeout for symmetry
+
+local function log(fmt, ...)
+    if Printf then Printf("ZealSync: " .. fmt, ...) end
+end
 
 local function recv_exact(sock, n)
     local buf = {}
@@ -66,14 +67,77 @@ local function recv_exact(sock, n)
     return table.concat(buf)
 end
 
-function M.send_request(host, port, request_table, timeout)
-    timeout = timeout or DEFAULT_TIMEOUT
+-- Open a TCP socket and connect, settimeout for the connect call.
+-- Returns sock on success, nil + err on failure. Caller closes on error.
+local function try_connect(ip, port)
     local sock = socket.tcp()
     if not sock then return nil, "socket.tcp() returned nil" end
-    sock:settimeout(timeout)
+    sock:settimeout(CONNECT_TIMEOUT)
+    local ok, err = sock:connect(ip, port)
+    if not ok then
+        sock:close()
+        return nil, tostring(err)
+    end
+    return sock
+end
 
-    local ok, err = sock:connect(host, port)
-    if not ok then sock:close(); return nil, "connect: " .. tostring(err) end
+-- Resolve the Reaper extension's endpoint and return a connected TCP socket.
+-- Strategy:
+--   1. Read UserVars endpoint. If present, try to connect.
+--   2. On miss or connect failure, run UDP discovery once. Persist first
+--      response. Try to connect to the discovered endpoint.
+--   3. If discovery returns nothing, or the post-discovery connect also
+--      fails, return nil + error string. No second discovery loop —
+--      a misconfigured firewall must not generate infinite UDP traffic.
+function M.connect()
+    local persisted = discover.read_endpoint()
+    if persisted then
+        local sock, err = try_connect(persisted.ip, persisted.tcpPort)
+        if sock then return sock end
+        log("connect to %s at %s:%d failed (%s); rediscovering",
+            tostring(persisted.name), tostring(persisted.ip),
+            tonumber(persisted.tcpPort) or 0, tostring(err))
+    else
+        log("no persisted endpoint; discovering Reaper extension...")
+    end
+
+    local responses = discover.discover()
+    if #responses == 0 then
+        log("no Reaper found on the network")
+        return nil, "no_reaper_found"
+    end
+
+    local chosen = responses[1]
+    local persisted_ok, persist_err = discover.persist_endpoint(chosen)
+    if not persisted_ok then
+        -- Endpoint discovered but couldn't be persisted (e.g. UserVars API
+        -- missing). Carry on with the connect attempt — the next plugin
+        -- run will rediscover, but this run can still proceed.
+        log("discovered %s at %s:%d (warning: persist failed: %s)",
+            tostring(chosen.name), tostring(chosen.ip),
+            tonumber(chosen.tcpPort) or 0, tostring(persist_err))
+    else
+        log("discovered %s at %s:%d",
+            tostring(chosen.name), tostring(chosen.ip),
+            tonumber(chosen.tcpPort) or 0)
+    end
+
+    local sock, err = try_connect(chosen.ip, chosen.tcpPort)
+    if sock then return sock end
+    log("connect to discovered %s at %s:%d failed (%s)",
+        tostring(chosen.name), tostring(chosen.ip),
+        tonumber(chosen.tcpPort) or 0, tostring(err))
+    return nil, "connect_failed_after_discovery"
+end
+
+-- Send a request, read the response, close. Endpoint resolved internally
+-- via M.connect() — callers don't see host/port.
+function M.send_request(request_table, timeout)
+    timeout = timeout or DEFAULT_TIMEOUT
+
+    local sock, connect_err = M.connect()
+    if not sock then return nil, connect_err end
+    sock:settimeout(timeout)
 
     local body = json.encode(request_table)
     local len = #body
