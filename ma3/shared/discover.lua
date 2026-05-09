@@ -134,9 +134,13 @@ end
 -- Returns a list { { ip, tcpPort, name }, ... } in arrival order. Empty
 -- list if nothing replied.
 function M.discover()
-    local sock = socket.udp()
+    -- udp4(), not udp(). LuaSocket's IPv6-capable udp() routes sendto
+    -- through getaddrinfo even for numeric IPv4 addresses, which fails on
+    -- the MA3 desk's build. Pure-IPv4 socket bypasses this. Matches MArkers
+    -- prior art at MArkersLIVE_deobfuscated.lua:10199.
+    local sock = socket.udp4()
     if not sock then
-        log("socket.udp() returned nil; cannot broadcast")
+        log("socket.udp4() returned nil; cannot broadcast")
         return {}
     end
 

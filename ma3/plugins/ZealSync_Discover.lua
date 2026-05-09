@@ -33,7 +33,7 @@ end
 local discover = load_shared("discover")
 
 local function main(...)
-    Printf("ZealSync_Discover: broadcasting on 255.255.255.255:29881, listening 5s...")
+    Printf("ZealSync_Discover: broadcasting on linked interfaces, port 29881, listening 5s...")
     local responses = discover.discover()
 
     if #responses == 0 then
