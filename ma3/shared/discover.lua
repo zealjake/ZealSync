@@ -48,6 +48,80 @@ local function log(fmt, ...)
     if Printf then Printf("ZealSync: " .. fmt, ...) end
 end
 
+-- Compute the directed broadcast for an (IPv4, mask) pair, both as dotted-
+-- decimal strings. Standard formula per octet: (ip & mask) | ~mask, clamped
+-- to a byte. Worked examples:
+--   192.168.1.42 / 255.255.255.0 -> 192.168.1.255
+--   10.0.0.5     / 255.0.0.0     -> 10.255.255.255
+--   127.0.0.1    / 255.0.0.0     -> 127.255.255.255 (then mapped to 127.0.0.1
+--                                  by the caller — loopback directed
+--                                  broadcasts have divergent OS behaviour)
+local function compute_directed_broadcast(ip, mask)
+    local ip_octets = {}
+    local mask_octets = {}
+    for n in string.gmatch(ip, "(%d+)") do
+        ip_octets[#ip_octets + 1] = tonumber(n)
+    end
+    for n in string.gmatch(mask, "(%d+)") do
+        mask_octets[#mask_octets + 1] = tonumber(n)
+    end
+    if #ip_octets ~= 4 or #mask_octets ~= 4 then return nil end
+    local out = {}
+    for i = 1, 4 do
+        local network = ip_octets[i] & mask_octets[i]
+        local host_fill = (~mask_octets[i]) & 0xff
+        out[i] = (network | host_fill) & 0xff
+    end
+    return table.concat(out, ".")
+end
+
+-- Iterate every linked MA3 interface and send `payload` to its directed
+-- broadcast address on DISCOVERY_PORT. Loopback directed broadcasts are
+-- mapped to 127.0.0.1 (matches MArkers; 127.255.255.255 has divergent OS
+-- behaviour). Returns the count of sendto calls that succeeded.
+--
+-- The whole enumeration is wrapped in pcall — if Obj.Children(Root().Interfaces)
+-- isn't available on a future MA3 build, we log and return 0 cleanly rather
+-- than crashing. Per-interface sendto failures are non-fatal: log and
+-- continue to the next NIC.
+local function broadcast_to_all_nics(sock, payload)
+    local sent_count = 0
+    local ok, err = pcall(function()
+        local interfaces = Root().Interfaces
+        if not interfaces then return end
+        for _, iface in pairs(Obj.Children(interfaces)) do
+            if iface.Link then
+                for _, ip_cfg in pairs(Obj.Children(iface)) do
+                    local ip_str = tostring(ip_cfg.Ip or "")
+                    local mask_str = tostring(ip_cfg.Mask or "")
+                    if ip_str:match("^%d+%.%d+%.%d+%.%d+$") and
+                       mask_str:match("^%d+%.%d+%.%d+%.%d+$") then
+                        local bcast = compute_directed_broadcast(ip_str, mask_str)
+                        if bcast and bcast:match("^127%.") then
+                            bcast = "127.0.0.1"
+                        end
+                        if bcast then
+                            local sent_ok, send_err =
+                                sock:sendto(payload, bcast, DISCOVERY_PORT)
+                            if sent_ok then
+                                sent_count = sent_count + 1
+                                log("broadcast sent to %s", bcast)
+                            else
+                                log("broadcast to %s failed: %s",
+                                    bcast, tostring(send_err))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    if not ok then
+        log("interface enumeration failed: %s", tostring(err))
+    end
+    return sent_count
+end
+
 local function valid_done_response(t)
     return type(t) == "table"
         and t.status == "done"
@@ -77,14 +151,16 @@ function M.discover()
         protocolVersion = version.PROTOCOL_VERSION,
     })
 
-    -- TODO(M2-followup): per-NIC enumeration is deferred (D4). 255.255.255.255
-    -- works on single-subnet show LANs, which is the assumed deployment for
-    -- M2-M6. If a deployment lands a Reaper machine on a different subnet
-    -- from the desk, we'll need to enumerate NIC broadcast addresses and
-    -- send one probe per NIC.
-    local sent_ok, send_err = sock:sendto(probe, "255.255.255.255", DISCOVERY_PORT)
-    if not sent_ok then
-        log("sendto broadcast failed: %s", tostring(send_err))
+    -- Enumerate MA3 interfaces and broadcast per NIC. The desk's LuaSocket
+    -- build does not accept "255.255.255.255" as a literal in sendto
+    -- (getaddrinfo rejects it without AI_NUMERICHOST). Per-NIC directed
+    -- broadcast is the working pattern, validated by MArkers prior art at
+    -- MArkersLIVE_deobfuscated.lua:10169-10192. Don't "simplify" this back
+    -- to limited broadcast — D4 was reversed precisely because it doesn't
+    -- work on this LuaSocket build.
+    local sent_count = broadcast_to_all_nics(sock, probe)
+    if sent_count == 0 then
+        log("no broadcast sent (no linked interfaces with valid IP/mask)")
         sock:close()
         return {}
     end
