@@ -39,6 +39,11 @@ local json = load_shared("json")
 
 local M = {}
 
+-- Wire-protocol version string, sent on every request and verified by the
+-- server (WIRE_PROTOCOL §10.3). Exposed so other ZealSync modules — discover,
+-- future per-verb wrappers — reuse the same literal instead of duplicating.
+M.PROTOCOL_VERSION = "1.0"
+
 local CLIENT_MAGIC = "MC"
 local SERVER_MAGIC = "MS"
 local DEFAULT_TIMEOUT = 2.0

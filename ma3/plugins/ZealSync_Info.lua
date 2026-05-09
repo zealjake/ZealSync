@@ -42,7 +42,7 @@ local function main(...)
     Printf("ZealSync_Info: sending info to %s:%d ...", HOST, PORT)
     local resp, err = wire.send_request(HOST, PORT, {
         action = "info",
-        protocolVersion = "1.0",
+        protocolVersion = wire.PROTOCOL_VERSION,
         dataPool = HandleToInt(DataPool()),
     })
     if not resp then

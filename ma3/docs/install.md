@@ -8,11 +8,13 @@ alongside them.
 
 ```
 <MA3 plugins root>/
+├── ZealSync_Discover.lua       ← from ma3/plugins/
 ├── ZealSync_Info.lua           ← from ma3/plugins/
 ├── (other ZealSync_*.lua plugins as they ship)
 └── ZealSync_shared/
-    ├── wire.lua                ← from ma3/shared/
-    └── json.lua                ← from ma3/shared/
+    ├── discover.lua            ← from ma3/shared/
+    ├── json.lua                ← from ma3/shared/
+    └── wire.lua                ← from ma3/shared/
 ```
 
 The `ZealSync_shared/` folder name matters — it's hardcoded into every
@@ -50,10 +52,13 @@ cp ma3/shared/*.lua "$PLUGINS_ROOT/ZealSync_shared/"
 cp ma3/plugins/*.lua "$PLUGINS_ROOT/"
 ```
 
-Then in MA3, import the plugin via the Plugin Pool: right-click the slot,
-**Import Plugin**, navigate to `<plugins root>/ZealSync_Info.lua`, set the
+Then in MA3, import each plugin via the Plugin Pool: right-click the slot,
+**Import Plugin**, navigate to `<plugins root>/ZealSync_*.lua`, set the
 component name (the source-of-truth files use `select(n, ...)` to pick up
-whatever component name the desk assigns).
+whatever component name the desk assigns). Repeat for every `ZealSync_*.lua`
+under the plugins root — `ZealSync_Discover.lua` (broadcasts and persists
+the Reaper endpoint to UserVars) and `ZealSync_Info.lua` (round-trips the
+`info` verb against the persisted endpoint) at minimum for M2.
 
 ## Why not a single folder, why not require()?
 
