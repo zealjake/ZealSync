@@ -1,17 +1,60 @@
--- ZealSync wire-protocol client. One request per connection.
--- Uses LuaSocket; rxi/json.lua for encode/decode.
+-- ZealSync wire-protocol client. One request per connection (§2.5).
+--
+-- Resolves the Reaper extension's endpoint via UserVars; falls back to UDP
+-- discovery on miss or stale endpoint per D6 (silent re-discover; the
+-- operator-confirmation prompt comes in M4 with the picker dialog).
+--
+-- Uses LuaSocket (a system module on the MA3 desk) and our vendored
+-- rxi/json.lua loaded via load_shared.
 
--- LuaSocket and json are both available on the MA3 desk's Lua path
--- (proven by MArkersLIVE — see docs/reference/MArkersLIVE_deobfuscated.lua).
--- ma3/shared/json.lua is vendored as a fallback only.
+local function load_shared(name)
+    local plugins_root
+    if type(GetPath) == "function" then
+        local ok, v = pcall(GetPath, "plugins")
+        if ok and type(v) == "string" and v ~= "" then plugins_root = v end
+    end
+    if not plugins_root then
+        error("ZealSync: GetPath('plugins') unavailable; cannot locate shared modules")
+    end
+    local cache_key = "ZealSync_" .. name
+    if _G[cache_key] then return _G[cache_key] end
+    local path = plugins_root .. "/ZealSync_shared/" .. name .. ".lua"
+    local ok, mod = pcall(dofile, path)
+    if not ok then
+        error("ZealSync: failed to load " .. path .. ": " .. tostring(mod))
+    end
+    _G[cache_key] = mod
+    return mod
+end
+
+-- LuaSocket is a system module on the desk — lives on the MA3 Lua path, not
+-- in our ZealSync_shared/ folder. require() is correct here.
 local socket = require("socket")
-local json = require("json")
+local json = load_shared("json")
+local version = load_shared("version")
+local discover = load_shared("discover")
 
 local M = {}
+
+-- Re-export so existing call sites that still read wire.PROTOCOL_VERSION
+-- keep working. New code should prefer load_shared("version").PROTOCOL_VERSION.
+M.PROTOCOL_VERSION = version.PROTOCOL_VERSION
 
 local CLIENT_MAGIC = "MC"
 local SERVER_MAGIC = "MS"
 local DEFAULT_TIMEOUT = 2.0
+local CONNECT_TIMEOUT = 2.0 -- §3.3 default; matches recv timeout for symmetry
+
+-- Client-side safety belt for the wait continuation (D7). Not a protocol
+-- concept — the server doesn't know we gave up. At the default 2s timeout
+-- this is two minutes of legitimate slow handlers, well past anything
+-- M2-M6 should produce. A buggy server emitting `wait` forever would
+-- otherwise hang the plugin indefinitely.
+local WAIT_CAP = 60
+
+local function log(fmt, ...)
+    if Printf then Printf("ZealSync: " .. fmt, ...) end
+end
 
 local function recv_exact(sock, n)
     local buf = {}
@@ -31,42 +74,145 @@ local function recv_exact(sock, n)
     return table.concat(buf)
 end
 
-function M.send_request(host, port, request_table, timeout)
-    timeout = timeout or DEFAULT_TIMEOUT
+-- Read one server frame: magic + length + body. Returns the decoded body
+-- table on success, or nil + error string. Caller is responsible for
+-- closing the socket on error.
+local function recv_one_frame(sock)
+    local magic, mag_err = recv_exact(sock, 2)
+    if not magic then return nil, "recv magic: " .. tostring(mag_err) end
+    if magic ~= SERVER_MAGIC then return nil, "bad magic: " .. magic end
+
+    local len_raw, len_err = recv_exact(sock, 4)
+    if not len_raw then return nil, "recv length: " .. tostring(len_err) end
+    local resp_len = string.unpack("<I4", len_raw)
+
+    local resp_body = ""
+    if resp_len > 0 then
+        local b, body_err = recv_exact(sock, resp_len)
+        if not b then return nil, "recv body: " .. tostring(body_err) end
+        resp_body = b
+    end
+
+    local decoded_ok, decoded = pcall(json.decode, resp_body)
+    if not decoded_ok then return nil, "json decode: " .. tostring(decoded) end
+    return decoded
+end
+
+-- Open a TCP socket and connect, settimeout for the connect call.
+-- Returns sock on success, nil + err on failure. Caller closes on error.
+local function try_connect(ip, port)
     local sock = socket.tcp()
     if not sock then return nil, "socket.tcp() returned nil" end
-    sock:settimeout(timeout)
+    sock:settimeout(CONNECT_TIMEOUT)
+    local ok, err = sock:connect(ip, port)
+    if not ok then
+        sock:close()
+        return nil, tostring(err)
+    end
+    return sock
+end
 
-    local ok, err = sock:connect(host, port)
-    if not ok then sock:close(); return nil, "connect: " .. tostring(err) end
+-- Resolve the Reaper extension's endpoint and return a connected TCP socket.
+-- Strategy:
+--   1. Read UserVars endpoint. If present, try to connect.
+--   2. On miss or connect failure, run UDP discovery once. Persist first
+--      response. Try to connect to the discovered endpoint.
+--   3. If discovery returns nothing, or the post-discovery connect also
+--      fails, return nil + error string. No second discovery loop —
+--      a misconfigured firewall must not generate infinite UDP traffic.
+function M.connect()
+    local persisted = discover.read_endpoint()
+    if persisted then
+        local sock, err = try_connect(persisted.ip, persisted.tcpPort)
+        if sock then return sock end
+        log("connect to %s at %s:%d failed (%s); rediscovering",
+            tostring(persisted.name), tostring(persisted.ip),
+            tonumber(persisted.tcpPort) or 0, tostring(err))
+    else
+        log("no persisted endpoint; discovering Reaper extension...")
+    end
+
+    local responses = discover.discover()
+    if #responses == 0 then
+        log("no Reaper found on the network")
+        return nil, "no_reaper_found"
+    end
+
+    local chosen = responses[1]
+    local persisted_ok, persist_err = discover.persist_endpoint(chosen)
+    if not persisted_ok then
+        -- Endpoint discovered but couldn't be persisted (e.g. UserVars API
+        -- missing). Carry on with the connect attempt — the next plugin
+        -- run will rediscover, but this run can still proceed.
+        log("discovered %s at %s:%d (warning: persist failed: %s)",
+            tostring(chosen.name), tostring(chosen.ip),
+            tonumber(chosen.tcpPort) or 0, tostring(persist_err))
+    else
+        log("discovered %s at %s:%d",
+            tostring(chosen.name), tostring(chosen.ip),
+            tonumber(chosen.tcpPort) or 0)
+    end
+
+    local sock, err = try_connect(chosen.ip, chosen.tcpPort)
+    if sock then return sock end
+    log("connect to discovered %s at %s:%d failed (%s)",
+        tostring(chosen.name), tostring(chosen.ip),
+        tonumber(chosen.tcpPort) or 0, tostring(err))
+    return nil, "connect_failed_after_discovery"
+end
+
+-- Send a request, read the response, close. Endpoint resolved internally
+-- via M.connect() — callers don't see host/port. Handles the wait
+-- continuation per WIRE_PROTOCOL §5.2: each wait resets the receive
+-- deadline by `timeout`, then we re-read on the same socket. Loop
+-- terminates on done, error, or the WAIT_CAP safety belt (D7).
+function M.send_request(request_table, timeout)
+    timeout = timeout or DEFAULT_TIMEOUT
+
+    local sock, connect_err = M.connect()
+    if not sock then return nil, connect_err end
 
     local body = json.encode(request_table)
     local len = #body
     local len_bytes = string.pack("<I4", len)
     local frame = CLIENT_MAGIC .. len_bytes .. body
 
+    sock:settimeout(timeout)
     local sent_ok, send_err = sock:send(frame)
     if not sent_ok then sock:close(); return nil, "send: " .. tostring(send_err) end
 
-    local magic, mag_err = recv_exact(sock, 2)
-    if not magic then sock:close(); return nil, "recv magic: " .. tostring(mag_err) end
-    if magic ~= SERVER_MAGIC then sock:close(); return nil, "bad magic: " .. magic end
+    local wait_count = 0
+    while true do
+        -- Reset the recv deadline at the top of every iteration. §5.2: each
+        -- wait extends the deadline by the same timeout value.
+        sock:settimeout(timeout)
+        local decoded, err = recv_one_frame(sock)
+        if not decoded then
+            sock:close()
+            return nil, err
+        end
 
-    local len_raw, len_err = recv_exact(sock, 4)
-    if not len_raw then sock:close(); return nil, "recv length: " .. tostring(len_err) end
-    local resp_len = string.unpack("<I4", len_raw)
-
-    local resp_body = ""
-    if resp_len > 0 then
-        local b, body_err = recv_exact(sock, resp_len)
-        if not b then sock:close(); return nil, "recv body: " .. tostring(body_err) end
-        resp_body = b
+        if decoded.status == "wait" then
+            wait_count = wait_count + 1
+            log("received wait (#%d) — server still working", wait_count)
+            if wait_count > WAIT_CAP then
+                log("server emitted >%d wait continuations; giving up", WAIT_CAP)
+                sock:close()
+                return {
+                    status = "error",
+                    code = "waitCapExceeded",
+                    message = "server emitted >" .. WAIT_CAP ..
+                        " wait continuations; client gave up",
+                }
+            end
+            -- Loop: deadline reset on next iteration's settimeout above.
+        else
+            -- Final response — done or error. Either way, the conversation
+            -- is over and the socket closes.
+            sock:close()
+            return decoded
+        end
     end
-    sock:close()
-
-    local decoded_ok, decoded = pcall(json.decode, resp_body)
-    if not decoded_ok then return nil, "json decode: " .. tostring(decoded) end
-    return decoded
 end
 
 return M

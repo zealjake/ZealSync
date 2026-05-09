@@ -1,5 +1,5 @@
-#ifndef ZEALSYNC_SYNC_INFO_HANDLER_H
-#define ZEALSYNC_SYNC_INFO_HANDLER_H
+#ifndef ZEALSYNC_SYNC_INFO_H
+#define ZEALSYNC_SYNC_INFO_H
 
 #include "../net/dispatcher.h"
 

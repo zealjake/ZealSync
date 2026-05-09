@@ -14,7 +14,7 @@ Internal tool for [Zeal](https://wearezeal.co) — a UK lighting and visual desi
 
 Two halves, two machines.
 
-- **MA3 side** (`ma3/plugins/`) — Lua plugins imported into grandMA3 via the desk's plugin pool, or pushed during dev with the PluginLoader workflow from [MA3_Tools](../MA3_Tools).
+- **MA3 side** (`ma3/plugins/`) — Lua plugins imported into grandMA3 via the desk's plugin pool, or pushed during dev with the PluginLoader workflow from [MA3_Tools](../MA3_Tools). Install procedure: see [`ma3/docs/install.md`](ma3/docs/install.md).
 - **Reaper side** (`reaper/`) — C++ extension built and dropped into Reaper's `UserPlugins/` directory on the audio machine.
 
 Build instructions land alongside the C++ source once the build system is in place (next session).

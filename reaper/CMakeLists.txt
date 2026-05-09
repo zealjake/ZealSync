@@ -7,19 +7,32 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ZEALSYNC_STANDALONE "Build a standalone test executable (no REAPER required)" OFF)
 
-set(SOURCES
-    src/main.cpp
+# Net-layer sources are REAPER-free: framing, dispatcher, listener, queue,
+# uuid. These can be linked into either the dylib or the standalone exe.
+set(NET_SOURCES
     src/net/framing.cpp
     src/net/dispatcher.cpp
     src/net/listener.cpp
-    src/sync/info_handler.cpp
+    src/net/main_thread_queue.cpp
+    src/net/protocol.cpp
+    src/net/udp_discovery.cpp
+    src/net/uuid.cpp
+)
+
+# REAPER-bound sources call into the REAPER C API and only link inside the
+# dylib (where REAPERAPI_LoadAPI populates the function pointers at load
+# time). Standalone leaves these out — there are no REAPER symbols to bind.
+set(REAPER_SOURCES
+    src/reaper_api/project.cpp
+    src/sync/info.cpp
 )
 
 if(ZEALSYNC_STANDALONE)
-    add_executable(reaper_zealsync ${SOURCES})
+    add_executable(reaper_zealsync src/main.cpp ${NET_SOURCES})
     target_compile_definitions(reaper_zealsync PRIVATE ZEALSYNC_STANDALONE=1)
 else()
-    add_library(reaper_zealsync MODULE ${SOURCES})
+    add_library(reaper_zealsync MODULE
+        src/main.cpp ${NET_SOURCES} ${REAPER_SOURCES})
     set_target_properties(reaper_zealsync PROPERTIES
         PREFIX ""
         SUFFIX ".dylib"
@@ -44,11 +57,43 @@ endif()
 
 target_include_directories(reaper_zealsync PRIVATE
     third_party
+)
+# SYSTEM include for vendored SDK headers — silences -Wunused-parameter and friends
+# in upstream code we don't own.
+target_include_directories(reaper_zealsync SYSTEM PRIVATE
     third_party/reaper-sdk/sdk
-    include
 )
 
 target_compile_options(reaper_zealsync PRIVATE -Wall -Wextra -Wpedantic)
 
 find_package(Threads REQUIRED)
 target_link_libraries(reaper_zealsync PRIVATE Threads::Threads)
+
+# Tests — small standalone executables, one per logical unit. Built by default;
+# disable with -DZEALSYNC_BUILD_TESTS=OFF.
+option(ZEALSYNC_BUILD_TESTS "Build standalone unit-test executables" ON)
+if(ZEALSYNC_BUILD_TESTS)
+    add_executable(queue_test
+        tests/queue_test.cpp
+        src/net/main_thread_queue.cpp
+    )
+    target_include_directories(queue_test PRIVATE src)
+    target_compile_options(queue_test PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_libraries(queue_test PRIVATE Threads::Threads)
+
+    add_executable(uuid_test
+        tests/uuid_test.cpp
+        src/net/uuid.cpp
+    )
+    target_include_directories(uuid_test PRIVATE src)
+    target_compile_options(uuid_test PRIVATE -Wall -Wextra -Wpedantic)
+
+    add_executable(udp_discovery_test
+        tests/udp_discovery_test.cpp
+        src/net/udp_discovery.cpp
+        src/net/protocol.cpp
+    )
+    target_include_directories(udp_discovery_test PRIVATE src third_party)
+    target_compile_options(udp_discovery_test PRIVATE -Wall -Wextra -Wpedantic)
+    target_link_libraries(udp_discovery_test PRIVATE Threads::Threads)
+endif()

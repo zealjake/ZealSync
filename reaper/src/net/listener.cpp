@@ -49,6 +49,7 @@ bool Listener::start(std::uint16_t port) {
         return false;
     }
 
+    bound_port_.store(port);
     stop_.store(false);
     thread_ = std::thread([this]() { run(); });
     return true;
@@ -63,6 +64,7 @@ void Listener::stop() {
         listen_fd_ = -1;
     }
     thread_.join();
+    bound_port_.store(0);
 }
 
 void Listener::run() {
@@ -87,21 +89,31 @@ void Listener::run() {
 
         std::string body;
         FrameStatus status = read_frame(conn, kClientMagic, body);
-        if (status == FrameStatus::ok) {
-            nlohmann::json response;
-            try {
-                auto request = nlohmann::json::parse(body);
-                response = dispatcher_.dispatch(request);
-            } catch (const nlohmann::json::parse_error &e) {
-                response = make_error("invalidRequest", std::string("JSON parse error: ") + e.what());
-            } catch (const std::exception &e) {
-                response = make_error("internalError", e.what());
-            }
-            const std::string out = response.dump();
-            write_frame(conn, kServerMagic, out);
+        if (status != FrameStatus::ok) {
+            ::close(conn);
+            continue;
         }
 
-        ::close(conn);
+        // Either the dispatcher returns Completed (sync — we own the fd, write
+        // and close), or Deferred (handler has taken ownership of the fd, will
+        // write the final frame from the main thread, and is responsible for
+        // closing it). The variant forces explicit branching here.
+        DispatchResult result;
+        try {
+            auto request = nlohmann::json::parse(body);
+            result = dispatcher_.dispatch(request, conn);
+        } catch (const nlohmann::json::parse_error &e) {
+            result = DispatchCompleted{
+                make_error("invalidRequest", std::string("JSON parse error: ") + e.what())};
+        } catch (const std::exception &e) {
+            result = DispatchCompleted{make_error("internalError", e.what())};
+        }
+
+        if (auto *completed = std::get_if<DispatchCompleted>(&result)) {
+            write_frame(conn, kServerMagic, completed->body.dump());
+            ::close(conn);
+        }
+        // Deferred: handler owns conn. Do not close.
     }
 }
 

@@ -4,19 +4,37 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <variant>
 
 #include <nlohmann/json.hpp>
 
 namespace zealsync::net {
 
-constexpr const char *kProtocolVersion = "1.0";
+// Result of dispatching a request. Either:
+// - Completed: we have the response body to write back synchronously.
+// - Deferred: the handler has taken ownership of the connection fd. It has
+//   already written {"status":"wait"} (per WIRE_PROTOCOL §5), enqueued a
+//   main-thread closure that will write the final done/error frame, and
+//   closed the fd itself. The listener MUST NOT close the fd in this case.
+//
+// Modelled as a std::variant so the listener can't accidentally treat a
+// deferred result as if it had a body — the type system forces the branching.
+struct DispatchCompleted {
+    nlohmann::json body;
+};
+struct DispatchDeferred {};
+using DispatchResult = std::variant<DispatchCompleted, DispatchDeferred>;
 
-using Handler = std::function<nlohmann::json(const nlohmann::json &)>;
+// Handlers receive the parsed request and the connection fd. Sync handlers
+// ignore the fd and return DispatchCompleted{...}. Async handlers send a
+// `wait` frame on the fd, enqueue main-thread work, and return
+// DispatchDeferred{}.
+using Handler = std::function<DispatchResult(const nlohmann::json &request, int fd)>;
 
 class Dispatcher {
 public:
     void register_verb(const std::string &name, Handler handler);
-    nlohmann::json dispatch(const nlohmann::json &request) const;
+    DispatchResult dispatch(const nlohmann::json &request, int fd) const;
 
 private:
     std::unordered_map<std::string, Handler> handlers_;
