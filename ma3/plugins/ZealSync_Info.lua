@@ -1,5 +1,8 @@
--- ZealSync M1 — minimal info round-trip plugin.
--- Sends `info` to the Reaper extension and Printfs each response field.
+-- ZealSync_Info — diagnostic plugin. Sends an `info` request to the Reaper
+-- extension and prints every WIRE_PROTOCOL §7.1 response field to System
+-- Monitor. Used to confirm wire-protocol health and to read project-level
+-- metadata (frame rate, drop-frame flag, project GUID, etc.) without
+-- opening Reaper.
 
 local componentName = select(1, ...)
 local pluginName    = select(2, ...)
@@ -47,21 +50,29 @@ local function main(...)
         return
     end
     if resp.status == "error" then
-        Printf("ZealSync_Info: server error code=%s message=%s",
+        Printf("ZealSync_Info: ERROR — code=%s  message=%s",
             tostring(resp.code), tostring(resp.message))
         return
     end
-    Printf("ZealSync_Info: response (status=%s)", tostring(resp.status))
-    Printf("  protocolVersion = %s", tostring(resp.protocolVersion))
-    Printf("  buildVersion    = %s", tostring(resp.buildVersion))
-    Printf("  projectName     = %s", tostring(resp.projectName))
-    Printf("  projectGUID     = %s", tostring(resp.projectGUID))
-    Printf("  projectPath     = %s", tostring(resp.projectPath))
-    Printf("  projectLength   = %s", tostring(resp.projectLength))
-    Printf("  timeOffset      = %s", tostring(resp.timeOffset))
-    Printf("  frameRate       = %s", tostring(resp.frameRate))
-    Printf("  dropFrame       = %s", tostring(resp.dropFrame))
-    Printf("  savedMeta       = %s", tostring(resp.savedMeta))
+
+    -- savedMeta is `null` in M2 (§7.1.3 — the saveMeta verb lands in M6).
+    -- rxi/json decodes null as Lua nil, so the field is absent from the
+    -- table; print "(none)" so the line reads as "this field was null"
+    -- rather than "this code forgot to handle nil".
+    local savedMeta = resp.savedMeta
+    if savedMeta == nil then savedMeta = "(none)" else savedMeta = tostring(savedMeta) end
+
+    Printf("ZealSync_Info: response received (status=%s)", tostring(resp.status))
+    Printf("ZealSync_Info:   protocolVersion = %s", tostring(resp.protocolVersion))
+    Printf("ZealSync_Info:   buildVersion    = %s", tostring(resp.buildVersion))
+    Printf("ZealSync_Info:   projectName     = %s", tostring(resp.projectName))
+    Printf("ZealSync_Info:   projectGUID     = %s", tostring(resp.projectGUID))
+    Printf("ZealSync_Info:   projectPath     = %s", tostring(resp.projectPath))
+    Printf("ZealSync_Info:   projectLength   = %s", tostring(resp.projectLength))
+    Printf("ZealSync_Info:   timeOffset      = %s", tostring(resp.timeOffset))
+    Printf("ZealSync_Info:   frameRate       = %s", tostring(resp.frameRate))
+    Printf("ZealSync_Info:   dropFrame       = %s", tostring(resp.dropFrame))
+    Printf("ZealSync_Info:   savedMeta       = %s", savedMeta)
 end
 
 return main
