@@ -35,6 +35,8 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 
 ## M2 — Real info handler + UDP discovery
 
+**Status:** Shipped 2026-05-09. Merge commit 65b65a5. Desk-verified.
+
 **Scope.** Make `info` real and find the server automatically.
 
 - `info` returns actual project name, sample rate, Reaper version — via `reaper_api/`.
@@ -133,3 +135,47 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 **Exit.** ZealSync handles both sync and transport on the show machine. ZealServer no longer runs.
 
 **Out of scope.** New transport features. Anything beyond parity with what ZealServer does today.
+
+---
+
+## M3+ kickoff backlog
+
+Items surfaced during M2 work that didn't ship in M2 and should be addressed
+at the start of the next milestone they affect. Not features; dev-loop and
+UX papercuts.
+
+### Hot-reload flag for load_shared cache
+
+**Surfaced:** M2 desk testing.
+**Problem:** `load_shared` caches modules in `_G.ZealSync_<name>` and never
+invalidates. Editing a shared module then re-running a plugin returns the
+cached old version. Currently worked around by manually clearing
+`_G.ZealSync_*` slots or restarting MA3.
+**Suggested fix:** `_G.ZEALSYNC_HOTRELOAD = true` short-circuits the cache
+in `load_shared`. Off by default; set during dev. ~5 lines.
+**When:** start of M3.
+
+### Two-mode UDP discovery timing
+
+**Surfaced:** M2 desk testing.
+**Problem:** `discover()` blocks the MA3 main thread for the full 5s listen
+window. Acceptable for the manual `ZealSync_Discover` plugin (operator
+explicitly invoked discovery, expected wait). Unacceptable on the
+connect-with-fallback path (operator invoked `ZealSync_Info`, expected
+~50ms, got 5s frozen desk on stale-endpoint case).
+**Suggested fix:** add `discover_first()` returning the first valid response
+and exiting immediately. Manual plugin keeps the full window
+(intent: "show me everything on the LAN"); fallback path uses
+`discover_first()` (intent: "find any working endpoint, fast").
+**When:** before any milestone where the freeze becomes load-bearing —
+likely M4 when sync operations chain.
+
+### docs/DECISIONS.md backfill discipline
+
+**Surfaced:** M2 close-out.
+**Problem:** M2 D-decisions were recorded across multiple chat threads and
+backfilled to `docs/DECISIONS.md` at milestone close. Risk: a decision made
+mid-milestone gets forgotten before backfill.
+**Suggested fix:** add a `docs/DECISIONS.md` entry at the moment a decision
+is settled, not at milestone close. The format is brief; the cost is small.
+**When:** ongoing from M3.
