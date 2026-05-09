@@ -1,11 +1,41 @@
 -- ZealSync wire-protocol client. One request per connection.
--- Uses LuaSocket; rxi/json.lua for encode/decode.
+-- Uses LuaSocket (a system module on the MA3 desk, proven by MArkersLIVE)
+-- and our vendored rxi/json.lua loaded explicitly via the same load_shared
+-- helper the plugin files use.
+--
+-- This file is itself loaded via load_shared("wire") from a plugin. We need
+-- our own copy of the helper so wire.lua's own dependencies resolve through
+-- GetPath('plugins') rather than relying on package.path or arbitrary
+-- working-directory behaviour. D9: every shared module that loads other
+-- shared modules carries the helper itself.
 
--- LuaSocket and json are both available on the MA3 desk's Lua path
--- (proven by MArkersLIVE — see docs/reference/MArkersLIVE_deobfuscated.lua).
--- ma3/shared/json.lua is vendored as a fallback only.
+local function load_shared(name)
+    local plugins_root
+    if type(GetPath) == "function" then
+        local ok, v = pcall(GetPath, "plugins")
+        if ok and type(v) == "string" and v ~= "" then plugins_root = v end
+    end
+    if not plugins_root then
+        error("ZealSync: GetPath('plugins') unavailable; cannot locate shared modules")
+    end
+    local cache_key = "ZealSync_" .. name
+    if _G[cache_key] then return _G[cache_key] end
+    local path = plugins_root .. "/ZealSync_shared/" .. name .. ".lua"
+    local ok, mod = pcall(dofile, path)
+    if not ok then
+        error("ZealSync: failed to load " .. path .. ": " .. tostring(mod))
+    end
+    _G[cache_key] = mod
+    return mod
+end
+
+-- LuaSocket is a system module on the desk — lives on the MA3 Lua path,
+-- not in our ZealSync_shared/ folder. require() is correct here.
 local socket = require("socket")
-local json = require("json")
+-- rxi/json is vendored under ma3/shared/json.lua — must come through
+-- load_shared so the canonical copy is used regardless of whatever
+-- package.path looks like on a given desk.
+local json = load_shared("json")
 
 local M = {}
 

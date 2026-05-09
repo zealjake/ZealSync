@@ -1,19 +1,42 @@
 -- ZealSync M1 — minimal info round-trip plugin.
--- Sends `info` to the Reaper extension at 127.0.0.1:29882 and Printfs each response field.
+-- Sends `info` to the Reaper extension and Printfs each response field.
 
 local componentName = select(1, ...)
 local pluginName    = select(2, ...)
 local signalTable   = select(3, ...)
 local myHandle      = select(4, ...)
 
--- Resolve ma3/shared/wire.lua relative to the plugin directory. MA3_Tools'
--- ClaudeBridge uses the same dofile pattern (lua/plugins/ClaudeBridge.lua).
--- Adjust the path below if the repo lives elsewhere on the desk.
-local SHARED_WIRE_PATH = "/Users/jake/Documents/dev/ZealSync/ma3/shared/wire.lua"
-local wire = dofile(SHARED_WIRE_PATH)
+-- Shared-module loader. Inlined per plugin file (D9): no separate loader
+-- module to avoid the chicken-and-egg of bootstrapping a loader. Pattern
+-- modelled on MA3_Tools/lua/plugins/ClaudeBridge.lua:429-458, with errors
+-- raised loudly via error() instead of returned as tagged strings.
+--
+-- Install: copy ma3/shared/*.lua to <MA3 plugins root>/ZealSync_shared/.
+-- See ma3/docs/install.md for the full procedure.
+local function load_shared(name)
+    local plugins_root
+    if type(GetPath) == "function" then
+        local ok, v = pcall(GetPath, "plugins")
+        if ok and type(v) == "string" and v ~= "" then plugins_root = v end
+    end
+    if not plugins_root then
+        error("ZealSync: GetPath('plugins') unavailable; cannot locate shared modules")
+    end
+    local cache_key = "ZealSync_" .. name
+    if _G[cache_key] then return _G[cache_key] end
+    local path = plugins_root .. "/ZealSync_shared/" .. name .. ".lua"
+    local ok, mod = pcall(dofile, path)
+    if not ok then
+        error("ZealSync: failed to load " .. path .. ": " .. tostring(mod))
+    end
+    _G[cache_key] = mod
+    return mod
+end
+
+local wire = load_shared("wire")
 
 local HOST = "127.0.0.1"
-local PORT = 29882
+local PORT = 29892
 
 local function main(...)
     Printf("ZealSync_Info: sending info to %s:%d ...", HOST, PORT)
