@@ -129,6 +129,19 @@ slot; if truthy, skip the cache and re-`dofile` from disk. Off by
 default. Folded into M3 from the M3+ backlog item. Documented in
 `ma3/docs/install.md`. ~5 lines per plugin file.
 
+### D13 — marker enumeration via GetRegionOrMarker, not EnumProjectMarkers3
+
+**Settled 2026-05-10.**
+Marker enumeration uses `GetRegionOrMarker(proj, i, "")` plus
+`GetRegionOrMarkerInfo_Value` / `GetSetRegionOrMarkerInfo_String` for
+all per-marker fields, including `I_DISPLAYEDCOLOR` and `GUID`. Cleaner
+than the path the M3 plan suggested (`EnumProjectMarkers3` for fields,
+`GetSetProjectInfo_String("MARKER_GUID:idx", ...)` for the GUID): the
+SDK header explicitly tags both `EnumProjectMarkers3` and
+`MARKER_GUID:X` as "discouraged. see GetRegionOrMarker,
+GetSetRegionOrMarkerInfo_String." Matches MArkers prior art at
+`MArkersServer_clean.lua:1099-1115`.
+
 ### D14 — bpmAtPosition wrapper returns full triple
 
 **Settled 2026-05-10.**

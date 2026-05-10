@@ -10,6 +10,7 @@ alongside them.
 <MA3 plugins root>/
 ├── ZealSync_Discover.lua       ← from ma3/plugins/
 ├── ZealSync_Info.lua           ← from ma3/plugins/
+├── ZealSync_Markers.lua        ← from ma3/plugins/
 ├── (other ZealSync_*.lua plugins as they ship)
 └── ZealSync_shared/
     ├── discover.lua            ← from ma3/shared/
@@ -57,9 +58,14 @@ Then in MA3, import each plugin via the Plugin Pool: right-click the slot,
 **Import Plugin**, navigate to `<plugins root>/ZealSync_*.lua`, set the
 component name (the source-of-truth files use `select(n, ...)` to pick up
 whatever component name the desk assigns). Repeat for every `ZealSync_*.lua`
-under the plugins root — `ZealSync_Discover.lua` (broadcasts and persists
-the Reaper endpoint to UserVars) and `ZealSync_Info.lua` (round-trips the
-`info` verb against the persisted endpoint) at minimum for M2.
+under the plugins root:
+
+- `ZealSync_Discover.lua` — broadcasts and persists the Reaper endpoint
+  to UserVars.
+- `ZealSync_Info.lua` — round-trips the `info` verb against the
+  persisted endpoint.
+- `ZealSync_Markers.lua` — round-trips the `markers` verb and logs the
+  parsed marker list (M3).
 
 ## Why not a single folder, why not require()?
 

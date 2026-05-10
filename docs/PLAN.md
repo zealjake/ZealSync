@@ -51,6 +51,8 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 
 ## M3 — `markers` verb (read-only)
 
+**Status:** Implementation complete on `m3/markers-readonly`. Awaiting desk-verify against a real Reaper project.
+
 **Scope.** Pull markers out of Reaper and round-trip them to MA3. No MA3 object creation yet — this proves the scrape and the data shape.
 
 - `markers` handler: enumerates Reaper project markers, returns `[{ name, position, color, ... }]`.
@@ -147,13 +149,7 @@ UX papercuts.
 ### Hot-reload flag for load_shared cache
 
 **Surfaced:** M2 desk testing.
-**Problem:** `load_shared` caches modules in `_G.ZealSync_<name>` and never
-invalidates. Editing a shared module then re-running a plugin returns the
-cached old version. Currently worked around by manually clearing
-`_G.ZealSync_*` slots or restarting MA3.
-**Suggested fix:** `_G.ZEALSYNC_HOTRELOAD = true` short-circuits the cache
-in `load_shared`. Off by default; set during dev. ~5 lines.
-**When:** start of M3.
+**Shipped:** M3, commit `a5e47a0` on `m3/markers-readonly`. `_G.ZEALSYNC_HOTRELOAD = true` short-circuits the `load_shared` cache. Documented in `ma3/docs/install.md`. Decision recorded as D12.
 
 ### Two-mode UDP discovery timing
 
@@ -178,4 +174,5 @@ backfilled to `docs/DECISIONS.md` at milestone close. Risk: a decision made
 mid-milestone gets forgotten before backfill.
 **Suggested fix:** add a `docs/DECISIONS.md` entry at the moment a decision
 is settled, not at milestone close. The format is brief; the cost is small.
-**When:** ongoing from M3.
+**When:** ongoing from M3 (in practice during M3 — D11/D12/D13/D14 were
+each recorded as they settled).
