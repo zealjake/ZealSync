@@ -79,3 +79,18 @@ Every time you pull `ma3/shared/` or `ma3/plugins/` from the repo, re-copy
 to the desk. There's no auto-sync. (For dev, the
 `MA3_Tools/lua/plugins/PluginLoader.lua` workflow is faster — but that's a
 separate tool, not part of ZealSync.)
+
+## Hot-reload flag (dev only)
+
+Each plugin's inlined `load_shared` helper caches loaded modules in
+`_G.ZealSync_<name>` so successive plugin runs don't re-parse the same
+file. While iterating on a shared module (e.g. `wire.lua`), set
+`_G.ZEALSYNC_HOTRELOAD = true` from the MA3 command line to bypass the
+cache and re-`dofile` the module on every plugin run:
+
+```
+LuaCommand "ZEALSYNC_HOTRELOAD = true"
+```
+
+Clear it (`= nil`) once you're done — the cache exists for a reason.
+The flag is read inside every `load_shared` call (D12).

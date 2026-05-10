@@ -103,3 +103,36 @@ Server reads `ZEALSYNC_TCP_PORT` env var (default 29892 during M2–M6) to
 coexist with ZealServer on 29882. M7 cutover flips default to 29882. UDP
 discovery port stays 29881 (no ZealServer collision). MA3 client reads
 `tcpPort` from discovery response — never hardcodes a TCP port.
+
+## M3 — markers verb (read-only)
+
+### D11 — MA3 log format for marker list
+
+**Settled 2026-05-10.**
+Three log lines per `markers` request: a summary, per-marker lines in
+timeline order, a colorGroups summary. Per-marker line:
+`[markers] <idx> <startTime>s [<endTime>s|-]  #<color hex>  "<name>"`
+where `idx` is 1-based for human readability, `color` is the wire-format
+24-bit RGB rendered as zero-padded 6-digit hex, `endTime` is `-` for
+point markers and `<seconds>s` for regions. Summary line:
+`[markers] received N markers across M color groups`. Trailing line:
+`[markers] colorGroups: #<hex>×<count>, ...` in §7.2.2 order. M4's UI
+will surface the same data in the preview dialog; the log is the M3
+diagnostic surface only.
+
+### D12 — Hot-reload flag for load_shared
+
+**Settled 2026-05-10.**
+Inlined `load_shared` helper in every ZealSync plugin checks
+`_G.ZEALSYNC_HOTRELOAD` before returning the cached `_G.ZealSync_<name>`
+slot; if truthy, skip the cache and re-`dofile` from disk. Off by
+default. Folded into M3 from the M3+ backlog item. Documented in
+`ma3/docs/install.md`. ~5 lines per plugin file.
+
+### D14 — bpmAtPosition wrapper returns full triple
+
+**Settled 2026-05-10.**
+The `reaper_api/` wrapper computing BPM at a position returns
+`{bpm, numerator, denominator}`, not BPM only. §7.4 (M6, tempo verb)
+will reuse this wrapper unchanged. Wrapper name:
+`time_sig_at_time(seconds) -> {bpm, numerator, denominator}`.
