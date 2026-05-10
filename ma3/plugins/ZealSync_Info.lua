@@ -26,7 +26,9 @@ local function load_shared(name)
         error("ZealSync: GetPath('plugins') unavailable; cannot locate shared modules")
     end
     local cache_key = "ZealSync_" .. name
-    if _G[cache_key] then return _G[cache_key] end
+    -- D12: _G.ZEALSYNC_HOTRELOAD bypasses the cache so iterating on shared
+    -- modules during dev doesn't require a desk restart. Off by default.
+    if _G[cache_key] and not _G.ZEALSYNC_HOTRELOAD then return _G[cache_key] end
     local path = plugins_root .. "/ZealSync_shared/" .. name .. ".lua"
     local ok, mod = pcall(dofile, path)
     if not ok then

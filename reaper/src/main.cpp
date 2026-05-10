@@ -7,6 +7,7 @@
 #include "net/main_thread_queue.h"
 #include "net/udp_discovery.h"
 #include "sync/info.h"
+#include "sync/markers.h"
 
 #ifndef ZEALSYNC_STANDALONE
 
@@ -17,13 +18,18 @@
 // without adding a WANT_ line links fine but crashes at runtime when REAPER
 // fails to populate the function pointer.
 #define REAPERAPI_WANT_EnumProjects
+#define REAPERAPI_WANT_GetNumRegionsOrMarkers
 #define REAPERAPI_WANT_GetProjExtState
 #define REAPERAPI_WANT_GetProjectLength
 #define REAPERAPI_WANT_GetProjectName
 #define REAPERAPI_WANT_GetProjectTimeOffset
+#define REAPERAPI_WANT_GetRegionOrMarker
+#define REAPERAPI_WANT_GetRegionOrMarkerInfo_Value
+#define REAPERAPI_WANT_GetSetRegionOrMarkerInfo_String
 #define REAPERAPI_WANT_MarkProjectDirty
 #define REAPERAPI_WANT_SetProjExtState
 #define REAPERAPI_WANT_ShowConsoleMsg
+#define REAPERAPI_WANT_TimeMap_GetTimeSigAtTime
 #define REAPERAPI_WANT_TimeMap_curFrameRate
 #define REAPERAPI_WANT_plugin_register
 
@@ -62,6 +68,7 @@ void main_thread_drain_tick() {
 
 void register_handlers() {
     zealsync::sync::register_info_handler(g_dispatcher);
+    zealsync::sync::register_markers_handler(g_dispatcher);
 }
 
 }

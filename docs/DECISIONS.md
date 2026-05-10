@@ -103,3 +103,60 @@ Server reads `ZEALSYNC_TCP_PORT` env var (default 29892 during M2–M6) to
 coexist with ZealServer on 29882. M7 cutover flips default to 29882. UDP
 discovery port stays 29881 (no ZealServer collision). MA3 client reads
 `tcpPort` from discovery response — never hardcodes a TCP port.
+
+## M3 — markers verb (read-only)
+
+### D11 — MA3 log format for marker list
+
+**Settled 2026-05-10. Amended 2026-05-10 (bpm column added).**
+Three log lines per `markers` request: a summary, per-marker lines in
+timeline order, a colorGroups summary. Per-marker line:
+`[markers] <idx> <startTime>s [<endTime>s|-] <bpm>bpm #<color hex> "<name>"`
+where `idx` is 1-based for human readability, `bpm` is `bpmAtPosition`
+formatted to one decimal place (matches REAPER's tempo display),
+`color` is the wire-format 24-bit RGB rendered as zero-padded 6-digit
+hex, `endTime` is `-` for point markers and `<seconds>s` for regions.
+Column order is idx, startTime, endTime, bpm, color, name — bpm sits
+before color so the eye groups time-related fields. Summary line:
+`[markers] received N markers across M color groups`. Trailing line:
+`[markers] colorGroups: #<hex>×<count>, ...` in §7.2.2 order. M4's UI
+will surface the same data in the preview dialog; the log is the M3
+diagnostic surface only.
+
+**Amendment rationale.** Initial format omitted `bpm`. Desk-verify
+showed that the wire carries `bpmAtPosition` per §7.2.1 but the
+unit test only exercises `time_sig_at_time` against stubbed data,
+which can't catch the wrapper being called with the wrong handle or
+the marker index instead of `startTime`. Eyeballing the log against
+REAPER's tempo readout is the only test for those — so the field has
+to be visible.
+
+### D12 — Hot-reload flag for load_shared
+
+**Settled 2026-05-10.**
+Inlined `load_shared` helper in every ZealSync plugin checks
+`_G.ZEALSYNC_HOTRELOAD` before returning the cached `_G.ZealSync_<name>`
+slot; if truthy, skip the cache and re-`dofile` from disk. Off by
+default. Folded into M3 from the M3+ backlog item. Documented in
+`ma3/docs/install.md`. ~5 lines per plugin file.
+
+### D13 — marker enumeration via GetRegionOrMarker, not EnumProjectMarkers3
+
+**Settled 2026-05-10.**
+Marker enumeration uses `GetRegionOrMarker(proj, i, "")` plus
+`GetRegionOrMarkerInfo_Value` / `GetSetRegionOrMarkerInfo_String` for
+all per-marker fields, including `I_DISPLAYEDCOLOR` and `GUID`. Cleaner
+than the path the M3 plan suggested (`EnumProjectMarkers3` for fields,
+`GetSetProjectInfo_String("MARKER_GUID:idx", ...)` for the GUID): the
+SDK header explicitly tags both `EnumProjectMarkers3` and
+`MARKER_GUID:X` as "discouraged. see GetRegionOrMarker,
+GetSetRegionOrMarkerInfo_String." Matches MArkers prior art at
+`MArkersServer_clean.lua:1099-1115`.
+
+### D14 — bpmAtPosition wrapper returns full triple
+
+**Settled 2026-05-10.**
+The `reaper_api/` wrapper computing BPM at a position returns
+`{bpm, numerator, denominator}`, not BPM only. §7.4 (M6, tempo verb)
+will reuse this wrapper unchanged. Wrapper name:
+`time_sig_at_time(seconds) -> {bpm, numerator, denominator}`.
