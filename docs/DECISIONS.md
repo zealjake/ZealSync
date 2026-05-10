@@ -140,6 +140,16 @@ slot; if truthy, skip the cache and re-`dofile` from disk. Off by
 default. Folded into M3 from the M3+ backlog item. Documented in
 `ma3/docs/install.md`. ~5 lines per plugin file.
 
+**Clarification 2026-05-10:** the hot-reload flag short-circuits the
+`load_shared` module cache — i.e. shared modules pulled in by `dofile`
+from plugins. It does NOT cover plugin entry-point files
+(`ma3/plugins/*.lua`), which are loaded by MA3's plugin loader via the
+bundled XML, not by `load_shared`. Editing a plugin entry file
+requires regenerating the bundled XML and re-importing on the desk
+regardless of the flag's state. Surfaced during M3 desk-verify when an
+amended `ZealSync_Markers.lua` didn't take effect until the XML was
+re-imported.
+
 ### D13 — marker enumeration via GetRegionOrMarker, not EnumProjectMarkers3
 
 **Settled 2026-05-10.**

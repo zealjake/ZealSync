@@ -51,7 +51,7 @@ Tracking doc, not a spec. Each milestone has scope, exit criteria, and out-of-sc
 
 ## M3 — `markers` verb (read-only)
 
-**Status:** Implementation complete on `m3/markers-readonly`. Awaiting desk-verify against a real Reaper project.
+**Status:** Shipped 2026-05-10. Merge commit 34a8857. Desk-verified.
 
 **Scope.** Pull markers out of Reaper and round-trip them to MA3. No MA3 object creation yet — this proves the scrape and the data shape.
 
@@ -150,6 +150,7 @@ UX papercuts.
 
 **Surfaced:** M2 desk testing.
 **Shipped:** M3, commit `a5e47a0` on `m3/markers-readonly`. `_G.ZEALSYNC_HOTRELOAD = true` short-circuits the `load_shared` cache. Documented in `ma3/docs/install.md`. Decision recorded as D12.
+**Caveat recorded under D12:** covers `load_shared` cache only, plugin entry files require XML re-import regardless.
 
 ### Two-mode UDP discovery timing
 
@@ -176,3 +177,4 @@ mid-milestone gets forgotten before backfill.
 is settled, not at milestone close. The format is brief; the cost is small.
 **When:** ongoing from M3 (in practice during M3 — D11/D12/D13/D14 were
 each recorded as they settled).
+**Adopted ongoing from M3.** D11/D12/D13/D14 were recorded mid-milestone as settled, not at close-out. Working practice.
