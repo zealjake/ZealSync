@@ -1,8 +1,34 @@
 # Installing the MA3 plugin
 
-Two folders to copy onto the MA3 desk. Plugin files go into the desk's
-plugins root; shared modules go into a `ZealSync_shared/` subfolder
-alongside them.
+Two install paths, pick one:
+
+1. **Bundled XML** (recommended for desk delivery): one self-contained
+   `.xml` file per plugin, drop into the MA3 plugins library folder, no
+   shared modules to copy. See [Bundled XML install](#bundled-xml-install)
+   below.
+2. **Raw `.lua` + `ZealSync_shared/`** (used during dev when iterating
+   on shared modules): copy the source files onto the desk, with
+   `_G.ZEALSYNC_HOTRELOAD = true` to bypass the module cache. See the
+   sections after.
+
+## Bundled XML install
+
+Run the bundler, which inlines all shared modules into a single Lua
+chunk per plugin and wraps each as a GrandMA3 `<UserPlugin>` xml:
+
+```sh
+python3 ma3/tools/build_plugin_xml.py
+```
+
+By default it writes to `~/MALightingTechnology/gma3_library/datapools/plugins/`.
+Override with `--out-dir`. After running, import each `ZealSync_*.xml`
+via the MA3 Plugin Pool (right-click → Import). The bundled XMLs do
+**not** require `ZealSync_shared/` on the desk — that's the whole point.
+
+## Raw `.lua` install (dev workflow)
+
+Plugin files go into the desk's plugins root; shared modules go into a
+`ZealSync_shared/` subfolder alongside them.
 
 ## Layout on the desk
 
