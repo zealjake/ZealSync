@@ -108,17 +108,28 @@ discovery port stays 29881 (no ZealServer collision). MA3 client reads
 
 ### D11 — MA3 log format for marker list
 
-**Settled 2026-05-10.**
+**Settled 2026-05-10. Amended 2026-05-10 (bpm column added).**
 Three log lines per `markers` request: a summary, per-marker lines in
 timeline order, a colorGroups summary. Per-marker line:
-`[markers] <idx> <startTime>s [<endTime>s|-]  #<color hex>  "<name>"`
-where `idx` is 1-based for human readability, `color` is the wire-format
-24-bit RGB rendered as zero-padded 6-digit hex, `endTime` is `-` for
-point markers and `<seconds>s` for regions. Summary line:
+`[markers] <idx> <startTime>s [<endTime>s|-] <bpm>bpm #<color hex> "<name>"`
+where `idx` is 1-based for human readability, `bpm` is `bpmAtPosition`
+formatted to one decimal place (matches REAPER's tempo display),
+`color` is the wire-format 24-bit RGB rendered as zero-padded 6-digit
+hex, `endTime` is `-` for point markers and `<seconds>s` for regions.
+Column order is idx, startTime, endTime, bpm, color, name — bpm sits
+before color so the eye groups time-related fields. Summary line:
 `[markers] received N markers across M color groups`. Trailing line:
 `[markers] colorGroups: #<hex>×<count>, ...` in §7.2.2 order. M4's UI
 will surface the same data in the preview dialog; the log is the M3
 diagnostic surface only.
+
+**Amendment rationale.** Initial format omitted `bpm`. Desk-verify
+showed that the wire carries `bpmAtPosition` per §7.2.1 but the
+unit test only exercises `time_sig_at_time` against stubbed data,
+which can't catch the wrapper being called with the wrong handle or
+the marker index instead of `startTime`. Eyeballing the log against
+REAPER's tempo readout is the only test for those — so the field has
+to be visible.
 
 ### D12 — Hot-reload flag for load_shared
 

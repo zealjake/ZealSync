@@ -71,10 +71,11 @@ local function main(...)
         #markers, #color_groups)
 
     for i, m in ipairs(markers) do
-        Printf('[markers] %d %.3fs %s  #%s  "%s"',
+        Printf('[markers] %d %.3fs %s %.1fbpm #%s "%s"',
             i,
             tonumber(m.startTime) or 0,
             format_end(m),
+            tonumber(m.bpmAtPosition) or 0,
             color_hex(m.color),
             tostring(m.name or ""))
     end
