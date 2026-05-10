@@ -25,6 +25,14 @@ set(NET_SOURCES
 set(REAPER_SOURCES
     src/reaper_api/project.cpp
     src/sync/info.cpp
+    src/sync/markers.cpp
+)
+
+# REAPER-free sub-units of REAPER-bound handlers. These contain pure logic
+# (JSON shape, sort/dedup) split from their handler so unit tests can link
+# them without the REAPER API.
+set(REAPER_FREE_HANDLER_SOURCES
+    src/sync/markers_response.cpp
 )
 
 if(ZEALSYNC_STANDALONE)
@@ -32,7 +40,7 @@ if(ZEALSYNC_STANDALONE)
     target_compile_definitions(reaper_zealsync PRIVATE ZEALSYNC_STANDALONE=1)
 else()
     add_library(reaper_zealsync MODULE
-        src/main.cpp ${NET_SOURCES} ${REAPER_SOURCES})
+        src/main.cpp ${NET_SOURCES} ${REAPER_SOURCES} ${REAPER_FREE_HANDLER_SOURCES})
     set_target_properties(reaper_zealsync PROPERTIES
         PREFIX ""
         SUFFIX ".dylib"
@@ -96,4 +104,11 @@ if(ZEALSYNC_BUILD_TESTS)
     target_include_directories(udp_discovery_test PRIVATE src third_party)
     target_compile_options(udp_discovery_test PRIVATE -Wall -Wextra -Wpedantic)
     target_link_libraries(udp_discovery_test PRIVATE Threads::Threads)
+
+    add_executable(markers_test
+        tests/markers_test.cpp
+        ${REAPER_FREE_HANDLER_SOURCES}
+    )
+    target_include_directories(markers_test PRIVATE src third_party)
+    target_compile_options(markers_test PRIVATE -Wall -Wextra -Wpedantic)
 endif()

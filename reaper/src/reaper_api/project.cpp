@@ -113,4 +113,50 @@ void mark_project_dirty() {
     MarkProjectDirty(current_project());
 }
 
+std::vector<MarkerEntry> enum_markers() {
+    std::vector<MarkerEntry> out;
+    auto *proj = current_project();
+    if (!proj) return out;
+
+    const int total = GetNumRegionsOrMarkers(proj);
+    out.reserve(static_cast<size_t>(total > 0 ? total : 0));
+
+    char name_buf[1024];
+    char guid_buf[64];
+    for (int i = 0; i < total; ++i) {
+        ProjectMarker *handle = GetRegionOrMarker(proj, i, "");
+        if (!handle) break;
+        MarkerEntry e{};
+        e.isRegion = GetRegionOrMarkerInfo_Value(proj, handle, "B_ISREGION") == 1.0;
+        e.startTime = GetRegionOrMarkerInfo_Value(proj, handle, "D_STARTPOS");
+        e.endTime = GetRegionOrMarkerInfo_Value(proj, handle, "D_ENDPOS");
+        e.customColor = static_cast<int>(
+            GetRegionOrMarkerInfo_Value(proj, handle, "I_CUSTOMCOLOR"));
+        e.displayedColor = static_cast<int>(
+            GetRegionOrMarkerInfo_Value(proj, handle, "I_DISPLAYEDCOLOR"));
+        e.userNumber = static_cast<int>(
+            GetRegionOrMarkerInfo_Value(proj, handle, "I_NUMBER"));
+
+        name_buf[0] = '\0';
+        GetSetRegionOrMarkerInfo_String(proj, handle, "P_NAME",
+                                        name_buf, false);
+        e.name = name_buf;
+
+        guid_buf[0] = '\0';
+        GetSetRegionOrMarkerInfo_String(proj, handle, "GUID",
+                                        guid_buf, false);
+        e.guid = normalize_guid(guid_buf);
+
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+TimeSigAtTime time_sig_at_time(double seconds) {
+    TimeSigAtTime r{0.0, 0, 0};
+    TimeMap_GetTimeSigAtTime(current_project(), seconds,
+                             &r.numerator, &r.denominator, &r.bpm);
+    return r;
+}
+
 }
